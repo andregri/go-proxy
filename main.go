@@ -12,17 +12,13 @@ var (
 	KeyFilePath  = "certs/server.key"
 )
 
-func proxy(w http.ResponseWriter, r *http.Request) {
-	log.Printf("%v\n", r.URL.String())
-
+func handleHTTP(w http.ResponseWriter, r *http.Request) {
 	req, err := http.NewRequest(r.Method, r.URL.String(), r.Body)
 	if err != nil {
 		log.Printf("Error during NewRequest() %s: %s\n", r.URL.String(), err)
 		w.WriteHeader(http.StatusInternalServerError)
 		return
 	}
-
-	log.Printf("%v\n", req)
 
 	// copy headers
 	for key, values := range r.Header {
@@ -39,14 +35,14 @@ func proxy(w http.ResponseWriter, r *http.Request) {
 	}
 	defer resp.Body.Close()
 
-	_, err = io.Copy(w, resp.Body)
+	written, err := io.Copy(w, resp.Body)
 	if err != nil {
 		log.Printf("Error during Copy() %s: %s\n", r.URL.String(), err)
 		w.WriteHeader(http.StatusInternalServerError)
 		return
 	}
 
-	log.Printf("%d - %v\n", resp.StatusCode, r.URL.String())
+	log.Printf("%s - %d - %dKB\n", r.Host, resp.StatusCode, written/1000)
 }
 
 func healthCheck(w http.ResponseWriter, r *http.Request) {
@@ -55,7 +51,21 @@ func healthCheck(w http.ResponseWriter, r *http.Request) {
 }
 
 func main() {
-	http.HandleFunc("/", proxy)
-	http.HandleFunc("/health", healthCheck)
-	log.Fatal(http.ListenAndServeTLS(":8443", CertFilePath, KeyFilePath, nil))
+	log.Fatal(http.ListenAndServeTLS(
+		":8443",
+		CertFilePath,
+		KeyFilePath,
+		http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if r.Method == http.MethodConnect {
+				log.Println("CONNECT not implemented")
+				w.WriteHeader(http.StatusNotImplemented)
+			} else {
+				if r.URL.Path == "/health" {
+					healthCheck(w, r)
+				} else {
+					handleHTTP(w, r)
+				}
+			}
+		})),
+	)
 }
