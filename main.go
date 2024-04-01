@@ -4,7 +4,9 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"net"
 	"net/http"
+	"time"
 )
 
 var (
@@ -42,7 +44,42 @@ func handleHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	log.Printf("%s - %d - %dKB\n", r.Host, resp.StatusCode, written/1000)
+	log.Printf("%s - %s - %s - %d - %dKB\n", r.Proto, r.Method, r.Host, resp.StatusCode, written/1000)
+}
+
+func handleTunnel(w http.ResponseWriter, r *http.Request) {
+	dest_conn, err := net.DialTimeout("tcp", r.Host, 10*time.Second)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusServiceUnavailable)
+		return
+	}
+	w.WriteHeader(http.StatusOK)
+
+	hj, ok := w.(http.Hijacker)
+	if !ok {
+		http.Error(w, "webserver doesn't support hijacking", http.StatusInternalServerError)
+		return
+	}
+	src_conn, _, err := hj.Hijack()
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	go transfer(src_conn.LocalAddr().String(), src_conn, dest_conn.LocalAddr().String(), dest_conn)
+	go transfer(dest_conn.LocalAddr().String(), dest_conn, src_conn.LocalAddr().String(), src_conn)
+
+	log.Printf("%s - %s - %s\n", r.Proto, r.Method, r.Host)
+}
+
+func transfer(destName string, destination io.WriteCloser, sourceName string, source io.ReadCloser) {
+	defer destination.Close()
+	defer source.Close()
+	written, err := io.Copy(destination, source)
+	if err != nil {
+		fmt.Printf("Error during copy: %v\n", err)
+	}
+	log.Printf("copied %d bytes %s -> %s\n", written, sourceName, destName)
 }
 
 func healthCheck(w http.ResponseWriter, r *http.Request) {
@@ -57,8 +94,7 @@ func main() {
 		KeyFilePath,
 		http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			if r.Method == http.MethodConnect {
-				log.Println("CONNECT not implemented")
-				w.WriteHeader(http.StatusNotImplemented)
+				handleTunnel(w, r)
 			} else {
 				if r.URL.Path == "/health" {
 					healthCheck(w, r)
