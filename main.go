@@ -7,16 +7,22 @@ import (
 	"net/http"
 )
 
+var (
+	CertFilePath = "certs/server.pem"
+	KeyFilePath  = "certs/server.key"
+)
+
 func proxy(w http.ResponseWriter, r *http.Request) {
 	log.Printf("%v\n", r.URL.String())
 
 	req, err := http.NewRequest(r.Method, r.URL.String(), r.Body)
 	if err != nil {
-		log.Printf("Error %s: %s\n", r.URL.String(), err)
+		log.Printf("Error during NewRequest() %s: %s\n", r.URL.String(), err)
 		w.WriteHeader(http.StatusInternalServerError)
-		fmt.Fprintf(w, "Error during NewRequest(): %s", err)
 		return
 	}
+
+	log.Printf("%v\n", req)
 
 	// copy headers
 	for key, values := range r.Header {
@@ -27,25 +33,29 @@ func proxy(w http.ResponseWriter, r *http.Request) {
 
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
-		log.Printf("Error %s: %s\n", r.URL.String(), err)
+		log.Printf("Error during Do() %s: %s\n", r.URL.String(), err)
 		w.WriteHeader(http.StatusInternalServerError)
-		fmt.Fprintf(w, "Error during Do(): %s", err)
 		return
 	}
 	defer resp.Body.Close()
 
 	_, err = io.Copy(w, resp.Body)
 	if err != nil {
-		log.Printf("Error %s: %s\n", r.URL.String(), err)
+		log.Printf("Error during Copy() %s: %s\n", r.URL.String(), err)
 		w.WriteHeader(http.StatusInternalServerError)
-		fmt.Fprintf(w, "Error during Copy(): %s", err)
 		return
 	}
 
 	log.Printf("%d - %v\n", resp.StatusCode, r.URL.String())
 }
 
+func healthCheck(w http.ResponseWriter, r *http.Request) {
+	log.Println("health check")
+	fmt.Fprintf(w, "OK")
+}
+
 func main() {
 	http.HandleFunc("/", proxy)
-	log.Fatal(http.ListenAndServe(":8080", nil))
+	http.HandleFunc("/health", healthCheck)
+	log.Fatal(http.ListenAndServeTLS(":8443", CertFilePath, KeyFilePath, nil))
 }
