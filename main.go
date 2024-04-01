@@ -6,6 +6,7 @@ import (
 	"log"
 	"net"
 	"net/http"
+	"sync"
 	"time"
 )
 
@@ -53,6 +54,7 @@ func handleTunnel(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusServiceUnavailable)
 		return
 	}
+	defer dest_conn.Close()
 	w.WriteHeader(http.StatusOK)
 
 	hj, ok := w.(http.Hijacker)
@@ -65,21 +67,29 @@ func handleTunnel(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
+	defer src_conn.Close()
 
-	go transfer(src_conn.LocalAddr().String(), src_conn, dest_conn.LocalAddr().String(), dest_conn)
-	go transfer(dest_conn.LocalAddr().String(), dest_conn, src_conn.LocalAddr().String(), src_conn)
+	srcConnStr := fmt.Sprintf("%s->%s", src_conn.LocalAddr().String(), src_conn.RemoteAddr().String())
+	dstConnStr := fmt.Sprintf("%s->%s", dest_conn.LocalAddr().String(), dest_conn.RemoteAddr().String())
 
 	log.Printf("%s - %s - %s\n", r.Proto, r.Method, r.Host)
+	log.Printf("src_conn: %s - dst_conn: %s\n", srcConnStr, dstConnStr)
+
+	var wg sync.WaitGroup
+
+	wg.Add(2)
+	go transfer(&wg, dest_conn, src_conn, dstConnStr, srcConnStr)
+	go transfer(&wg, src_conn, dest_conn, srcConnStr, dstConnStr)
+	wg.Wait()
 }
 
-func transfer(destName string, destination io.WriteCloser, sourceName string, source io.ReadCloser) {
-	defer destination.Close()
-	defer source.Close()
+func transfer(wg *sync.WaitGroup, destination io.Writer, source io.Reader, destName, srcName string) {
+	defer wg.Done()
 	written, err := io.Copy(destination, source)
 	if err != nil {
-		fmt.Printf("Error during copy: %v\n", err)
+		fmt.Printf("Error during copy from %s to %s: %v\n", srcName, destName, err)
 	}
-	log.Printf("copied %d bytes %s -> %s\n", written, sourceName, destName)
+	log.Printf("copied %d bytes from %s to %s\n", written, srcName, destName)
 }
 
 func healthCheck(w http.ResponseWriter, r *http.Request) {
@@ -88,10 +98,8 @@ func healthCheck(w http.ResponseWriter, r *http.Request) {
 }
 
 func main() {
-	log.Fatal(http.ListenAndServeTLS(
-		":8443",
-		CertFilePath,
-		KeyFilePath,
+	log.Fatal(http.ListenAndServe(
+		":8080",
 		http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			if r.Method == http.MethodConnect {
 				handleTunnel(w, r)

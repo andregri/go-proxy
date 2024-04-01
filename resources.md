@@ -11,3 +11,6 @@ Default HTTP handler in Go is the [ServeMux](https://cs.opensource.google/go/go/
 In case of CONNECT requests, it redirects the connection to the same host and path specified in the request.
 The CONNECT request to google.com/ points to the "google.com" host and the "/" root path.
 Since my handler was handling just the root path "/", the handler didn't match the host.
+
+https://stackoverflow.com/questions/75418196/correct-usage-of-io-copy-to-proxy-data-between-two-net-conn-tcp-connections-in-g
+How to proxy 2 tcp connections?

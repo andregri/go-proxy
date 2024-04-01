@@ -1,8 +1,8 @@
 test-http:
-	curl -L --proxy https://localhost:8443 --proxy-cacert certs/server.pem http://google.com
+	curl -L --proxy http://localhost:8080 http://google.com
 
 test-https:
-	curl -Lv --proxy https://localhost:8443 --proxy-cacert certs/server.pem https://google.com
+	curl -Lv --proxy http://localhost:8080 https://example.org
 
 health:
-	curl --cacert certs/server.pem --key certs/server.key https://localhost:8443/health
+	curl http://localhost:8080/health
