@@ -10,11 +10,6 @@ import (
 	"time"
 )
 
-var (
-	CertFilePath = "certs/server.pem"
-	KeyFilePath  = "certs/server.key"
-)
-
 func handleHTTP(w http.ResponseWriter, r *http.Request) {
 	req, err := http.NewRequest(r.Method, r.URL.String(), r.Body)
 	if err != nil {
